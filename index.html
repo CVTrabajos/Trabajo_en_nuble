@@ -17,7 +17,23 @@ header p{color:#94A3B8;font-size:.95rem}
 .container{max-width:780px;margin:-18px auto 0;padding:0 16px}
 .search-box{background:var(--card);padding:12px 16px;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.08);display:flex;align-items:center;gap:10px;border:1px solid var(--border)}
 .search-box input{width:100%;border:none;outline:none;font-size:1rem;color:var(--text);background:transparent}
-.filters-wrapper{display:flex;align-items:center;gap:6px;margin:12px 0 8px}
+
+/* Bloque Filtros de Ubicación */
+.location-filters{background:var(--card);border-radius:14px;padding:14px 16px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,.03);margin-top:14px}
+.location-title{font-size:.95rem;font-weight:700;margin-bottom:10px;color:var(--text);display:flex;align-items:center;gap:6px}
+.location-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:540px){.location-grid{grid-template-columns:1fr}}
+.select-group{display:flex;flex-direction:column;gap:4px}
+.select-group label{font-size:.8rem;font-weight:600;color:var(--muted)}
+.select-group select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:.9rem;color:var(--text);outline:none;cursor:pointer}
+.select-group select:focus{border-color:var(--primary)}
+
+/* Subencabezado Categorías */
+.section-subhead{margin:16px 4px 6px}
+.section-subhead h3{font-size:1.05rem;font-weight:700;margin-bottom:2px;color:var(--text)}
+.section-subhead p{font-size:.85rem;color:var(--muted)}
+
+.filters-wrapper{display:flex;align-items:center;gap:6px;margin:8px 0}
 .filters-scroll{display:flex;gap:8px;overflow-x:auto;padding:6px 0;scrollbar-width:none;scroll-behavior:smooth;flex:1}
 .filters-scroll::-webkit-scrollbar{display:none}
 .scroll-arrow{background:#fff;border:1px solid var(--border);color:var(--muted);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.25rem;cursor:pointer;flex-shrink:0;user-select:none}
@@ -58,6 +74,33 @@ footer{max-width:680px;margin:40px auto 0;text-align:center;padding:0 20px;font-
     <input type="text" id="searchInput" placeholder="Buscar por cargo, empresa o palabra clave...">
   </div>
 
+  <!-- Filtro por Provincia y Comuna -->
+  <div class="location-filters">
+    <div class="location-title">📍 Filtrar por ubicación:</div>
+    <div class="location-grid">
+      <div class="select-group">
+        <label for="provinciaSelect">Provincia</label>
+        <select id="provinciaSelect">
+          <option value="all">Todas las provincias (Toda la Región)</option>
+          <option value="Diguillín">Diguillín</option>
+          <option value="Itata">Itata</option>
+          <option value="Punilla">Punilla</option>
+        </select>
+      </div>
+      <div class="select-group">
+        <label for="comunaSelect">Comuna</label>
+        <select id="comunaSelect">
+          <option value="all">Todas las comunas</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-subhead">
+    <h3>Categorías de empleo</h3>
+    <p>Filtra las ofertas según tu rubro o área laboral</p>
+  </div>
+
   <div class="filters-wrapper">
     <button class="scroll-arrow" id="scrollLeft" aria-label="Izquierda">‹</button>
     <div class="filters-scroll" id="filtersScroll">
@@ -95,19 +138,78 @@ const CACHE_KEY = 'ofertas_nuble_v1';
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzlGBD2SfznPrx7KQFnXzKW7gdvpKwR0TSpxPADvXeFyp2djP6UZDW2vNqvQuNnwqfu/exec";
 const CAT_COLORS = {comercial:'#FF8A00',ventas:'#FF8A00',retail:'#FF8A00',tecnico:'#00CED1',técnico:'#00CED1',mantenimiento:'#00CED1',mantencion:'#00CED1',logistica:'#D4AC0D',logística:'#D4AC0D',bodega:'#D4AC0D',administrativo:'#1565D8',oficina:'#1565D8',rrhh:'#1565D8',salud:'#2EAF62',tens:'#2EAF62',construccion:'#FF0000',construcción:'#FF0000',educacion:'#9C27B0',educación:'#9C27B0',gastronomia:'#795548',gastronomía:'#795548',cocina:'#795548',otros:'#999999'};
 
-let jobsData = [], activeCategory = 'all', searchQuery = '';
+// Provincias y Comunas de la Región de Ñuble
+const PROVINCIAS_NUBLE = {
+  "Diguillín": ["Bulnes", "Chillán", "Chillán Viejo", "El Carmen", "Pemuco", "Pinto", "Quillón", "San Ignacio", "Yungay"],
+  "Itata": ["Cobquecura", "Coelemu", "Ninhue", "Portezuelo", "Quirihue", "Ránquil", "Treguaco"],
+  "Punilla": ["Coihueco", "Ñiquén", "San Carlos", "San Fabián", "San Nicolás"]
+};
+
+let jobsData = [], activeCategory = 'all', searchQuery = '', selectedProvincia = 'all', selectedComuna = 'all';
 const $ = id => document.getElementById(id);
 
 function esc(s){return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function colorOf(cat){const l = String(cat || '').toLowerCase(); for (const [k,v] of Object.entries(CAT_COLORS)) if (l.includes(k)) return v; return '#999999';}
 
-function renderJobs(){
-  const q = searchQuery, cat = activeCategory.toLowerCase();
-  const list = jobsData.filter(j => {
-    const catTxt = String(j.cat || '').toLowerCase();
-    const txt = `${j.cargo || ''} ${j.empresa || ''} ${catTxt}`.toLowerCase();
-    return txt.includes(q) && (cat === 'all' || catTxt.includes(cat));
+function normalizeStr(str) {
+  return String(str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function updateComunasSelect() {
+  const comSelect = $('comunaSelect');
+  comSelect.innerHTML = '<option value="all">Todas las comunas</option>';
+
+  let listaComunas = [];
+  if (selectedProvincia === 'all') {
+    for (const coms of Object.values(PROVINCIAS_NUBLE)) {
+      listaComunas.push(...coms);
+    }
+    listaComunas.sort((a,b) => a.localeCompare(b));
+  } else if (PROVINCIAS_NUBLE[selectedProvincia]) {
+    listaComunas = [...PROVINCIAS_NUBLE[selectedProvincia]];
+  }
+
+  listaComunas.forEach(com => {
+    const opt = document.createElement('option');
+    opt.value = com;
+    opt.textContent = com;
+    comSelect.appendChild(opt);
   });
+  selectedComuna = 'all';
+}
+
+function renderJobs(){
+  const normQ = normalizeStr(searchQuery);
+  const normCat = normalizeStr(activeCategory);
+  const normComuna = normalizeStr(selectedComuna);
+
+  const list = jobsData.filter(j => {
+    const rawCat = String(j.cat || '');
+    const normCatTxt = normalizeStr(rawCat);
+    const fullText = normalizeStr(`${j.cargo || ''} ${j.empresa || ''} ${rawCat}`);
+
+    // 1. Filtro por buscador de texto
+    const matchSearch = !normQ || fullText.includes(normQ);
+
+    // 2. Filtro por categoría
+    const matchCategory = (activeCategory === 'all' || normCatTxt.includes(normCat));
+
+    // 3. Filtro por ubicación (provincia / comuna)
+    let matchLocation = true;
+    if (selectedComuna !== 'all') {
+      matchLocation = fullText.includes(normComuna);
+    } else if (selectedProvincia !== 'all') {
+      const comunasDeProvincia = PROVINCIAS_NUBLE[selectedProvincia] || [];
+      matchLocation = comunasDeProvincia.some(c => fullText.includes(normalizeStr(c)));
+    }
+
+    return matchSearch && matchCategory && matchLocation;
+  });
+
   $('jobCount').textContent = `${list.length} vacante${list.length === 1 ? '' : 's'} disponible${list.length === 1 ? '' : 's'}`;
   if (!list.length){ $('jobList').innerHTML = '';$('noResults').style.display = 'block'; return; }
   $('noResults').style.display = 'none';$('jobList').innerHTML = list.map(j => {
@@ -121,14 +223,31 @@ function renderJobs(){
   }).join('');
 }
 
+// Eventos de filtros
 $('searchInput').addEventListener('input', e => { searchQuery = e.target.value.toLowerCase().trim(); renderJobs(); });
+
+$('provinciaSelect').addEventListener('change', e => {
+  selectedProvincia = e.target.value;
+  updateComunasSelect();
+  renderJobs();
+});
+
+$('comunaSelect').addEventListener('change', e => {
+  selectedComuna = e.target.value;
+  renderJobs();
+});
+
 document.querySelectorAll('.filter-btn').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.filter-btn').forEach(x => x.classList.remove('active'));
   b.classList.add('active'); activeCategory = b.dataset.cat; renderJobs();
 }));
+
 const sc = $('filtersScroll');
 $('scrollLeft').onclick = () => sc.scrollBy({left:-220,behavior:'smooth'});$('scrollRight').onclick = () => sc.scrollBy({left:220,behavior:'smooth'});
 sc.addEventListener('wheel', e => { if (e.deltaY){ e.preventDefault(); sc.scrollLeft += e.deltaY; } }, {passive:false});
+
+// Inicializar lista de comunas
+updateComunasSelect();
 
 // 1) Mostrar al instante lo último guardado en el navegador
 try {
@@ -144,7 +263,7 @@ function showError(){
   $('noResults').style.display = 'block';
 }
 function aplicar(data, esLive){
-  if (!Array.isArray(data) || !data.length) throw new Error('vacío');
+  if (!Array.isArray(data)) throw new Error('formato');
   if (!esLive && liveLoaded) return;
   if (esLive) liveLoaded = true;
   jobsData = data; renderJobs();
